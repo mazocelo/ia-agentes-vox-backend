@@ -25,6 +25,7 @@ const {
 } = require('@langchain/core/prompts');
 const agents = require('../shared/agents.js');
 const dotenv = require('dotenv');
+const flowDigest = require("./tools/FlowDigest.js")
 dotenv.config();
 
 // Generate Model
@@ -73,6 +74,9 @@ async function createClientAgent(promptInitial, historyMessages, especs) {
     const prompt = await createPrompt(promptInitial);
 
     const agent = new ConversationChain({
+        tools:[
+            flowDigest
+        ],
         llm: generateModel(especs),
         prompt,
         memory,
