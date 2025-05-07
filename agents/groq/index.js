@@ -78,14 +78,13 @@ async function createClientAgent(promptInitial, historyMessages, especs) {
         memory,
         verbose: true,
     });
-
     return agent;
 }
 
 // Recupera agente de cliente (ou cria, se não existir)
 async function getClientAgent(clienteId, promptInitial = 'Assistente geral', historyMessages = [], especs = {}) {
-    console.log("agents",agents)
-    if (!clienteId || agents.size === 0 || agents.has(clienteId)) {
+    if (clienteId && agents.size !== 0 && agents.has(clienteId)) {
+        console.log(`Agente já existe para o cliente ${clienteId}.`);
         return agents.get(clienteId);
     }
 
@@ -93,6 +92,7 @@ async function getClientAgent(clienteId, promptInitial = 'Assistente geral', his
         const agent = await createClientAgent(promptInitial, historyMessages, especs);
         agents.set(clienteId, agent);
         console.log(`Agente criado para o cliente ${clienteId}.`);
+        
         return agent;
     } catch (error) {
         console.error(`Erro ao criar agente para o cliente ${clienteId}:`, error);

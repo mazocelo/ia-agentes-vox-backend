@@ -1,12 +1,15 @@
 const { getClientAgent } = require("../../agents/groq");
 
+const Modelos = {
+    'groq': getClientAgent,
+}
 
 const createAgent = async (clienteId, agente = {}) => {
-    const { descricao, historyMessages, especs } = agente;
-    if (!descricao) {
+    const { descricao, historyMessages, especs, modelo } = agente;
+    if (!descricao && modelo) {
         throw new Error('Prompt inicial não fornecido.');
     }
-    const clientAgent = await getClientAgent(clienteId, descricao, historyMessages, especs);
+    const clientAgent = await Modelos[modelo](clienteId, descricao, historyMessages, especs);
     return clientAgent;
 }
 
