@@ -7,13 +7,14 @@
 var app = require('../app');
 var debug = require('debug')('backend:server');
 var http = require('http');
-var agents = require('../agents/shared/agents');
+var { loadAllAgents } = require('../agents/shared/load');
 
 /**
  * Get port from environment and store in Express.
  */
 
 var port = normalizePort(process.env.PORT || '3000');
+loadAllAgents();
 app.set('port', port);
 
 /**

@@ -7,6 +7,7 @@ const authMiddleware = require('./middlewares/authMiddleware');
 
 var authRouter = require('./routes/auth');
 var agentsRouter = require('./routes/agents');
+var chatRouter = require('./routes/chat');
 
 var cors = require('cors');
 var app = express();
@@ -29,7 +30,9 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/auth', authRouter);
-app.use('/agents', authMiddleware, agentsRouter); // Adicionando o middleware de autenticação
+app.use('/agents', authMiddleware, agentsRouter); 
+// app.use('/chat', authMiddleware, chatRouter);
+app.use('/chat', chatRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {

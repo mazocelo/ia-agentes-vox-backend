@@ -1,26 +1,48 @@
-const { getClientAgent } = require("../../agents/groq");
+const { createGroqAgent } = require("../../agents/groq");
+const { Agent } = require("../../Models");
+const agents = require('../../agents/shared/agents');
 
 const Modelos = {
-    'groq': getClientAgent,
+    'groq': createGroqAgent,
 }
 
 const createAgent = async (clienteId, agente = {}) => {
-    const { descricao, historyMessages, especs, modelo } = agente;
+    const { nome, descricao, especs, modelo } = agente;
     if (!descricao && modelo) {
         throw new Error('Prompt inicial não fornecido.');
     }
-    const clientAgent = await Modelos[modelo](clienteId, descricao, historyMessages, especs);
-    return clientAgent;
-}
-
-const loadAgent = async (clienteId, agente = {}) => {
-    const { descricao, historyMessages, especs } = agente;
-    if (!descricao || !historyMessages) {
-        throw new Error('Dados não fornecidos.');
+    //No futuro aqui deve estar as verificações de cada cliente
+    let modelAgent = {
+        nome,
+        modelo,
+        info: descricao,
+        detalhes: especs,
+        tenant_id: clienteId,
     }
-    const clientAgent = await getClientAgent(clienteId, descricao, historyMessages, especs);
+
+    let resultAgent = await Agent.create(modelAgent);
+    modelAgent.id = resultAgent.id;
+
+    const clientAgent = await Modelos[modelo](modelAgent);
+    if (!clientAgent) {
+        throw new Error('Erro ao criar o agente.');
+    }
+    
+    agents.set(modelAgent.id, clientAgent);
+    console.log(`Agente ${modelAgent.nome} criado com sucesso para o cliente ${clienteId}.`);
+
     return clientAgent;
+
 }
 
 
-module.exports = { createAgent };
+const getAgents = async (clienteId) => {
+    const agents = await Agent.findAll({ where: { tenant_id: clienteId } });
+    if (!agents) {
+        return [];
+    }
+    return agents;
+}
+
+
+module.exports = { createAgent, getAgents };
