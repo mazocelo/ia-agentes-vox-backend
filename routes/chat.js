@@ -1,6 +1,6 @@
 var express = require('express');
 var router = express.Router();
-const { Agents } = require('../Models');
+const {Agent} = require('../Models');
 const { askAgent } = require('../controllers/chat');
 
 router.post('/ask', async function (req, res, next) {
@@ -9,8 +9,7 @@ router.post('/ask', async function (req, res, next) {
         return res.status(400).json({ error: 'All fields are required' });
     }
     try {
-        const agent = await Agents.findOne({ where: { api_key } });
-        
+        const agent = await Agent.findOne({ where: { api_key } });
         if (!agent) {
             return res.status(404).json({ error: 'Agent not found' });
         }

@@ -13,16 +13,18 @@ const loadAllAgents = async () => {
     }
     for (const agentData of agentsList) {
         try {
-            const clientAgent = await Modelos[agentData.modelo](agentData);
+            const { dataValues } = agentData;
+            const clientAgent = await Modelos[dataValues.modelo](dataValues);
             if (!clientAgent) {
                 throw new Error('Erro ao criar o agente.');
             }
-            agents.set(agentData.id, clientAgent);
-            console.log(`Agente ${agentData.nome} carregado com sucesso.`);
+            const agent = Object.assign(clientAgent, dataValues);
+            agents.set(agent.id, agent);
+            console.log(`Agente ${agent.nome} carregado com sucesso.`);
         } catch (error) {
-            console.error(`Erro ao carregar o agente ${agentData.nome}:`, error);
+            console.error(`Erro ao carregar o agente `, error);
         }
     }
- }
+}
 
- module.exports = { loadAllAgents };
+module.exports = { loadAllAgents };

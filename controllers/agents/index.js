@@ -21,17 +21,17 @@ const createAgent = async (clienteId, agente = {}) => {
     }
 
     let resultAgent = await Agent.create(modelAgent);
-    modelAgent.id = resultAgent.id;
-
+    const { dataValues } = resultAgent;
     const clientAgent = await Modelos[modelo](modelAgent);
     if (!clientAgent) {
         throw new Error('Erro ao criar o agente.');
     }
-    
-    agents.set(modelAgent.id, clientAgent);
+    const agent = Object.assign(clientAgent, dataValues);
+
+    agents.set(agent.id, agent);
     console.log(`Agente ${modelAgent.nome} criado com sucesso para o cliente ${clienteId}.`);
 
-    return clientAgent;
+    return dataValues;
 
 }
 

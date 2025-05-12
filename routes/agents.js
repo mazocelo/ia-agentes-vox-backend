@@ -10,8 +10,8 @@ router.post('/create', async function (req, res, next) {
     return res.status(400).json({ error: 'All fields are required' });
   }
   try {
-    let agent = await createAgent(clientId, agent)
-    res.status(201).json({ success: true, agent });
+    let newAgent = await createAgent(clientId, agent)
+    res.status(201).json({ success: true, agent: newAgent });
   }
   catch (error) {
     console.error(error);
