@@ -27,13 +27,17 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
     },
     status: {
-      type: DataTypes.ENUM('ativo', 'inativo', 'suspenso'),
-      defaultValue: 'ativo',
+      type: DataTypes.ENUM('ativo', 'pausado', 'suspenso','inativo'),
+      defaultValue: 'pausado',
     },
     api_key: {
       type: DataTypes.UUID,
       defaultValue: fn('gen_random_uuid'), // Correção aqui para usar fn
       allowNull: true,
+    },
+    software: {
+      type: DataTypes.STRING, // ou DataTypes.TEXT, se quiser aceitar textos maiores
+      allowNull: true,        // ou false, se quiser obrigatório
     },
   }, {
     tableName: 'agents',

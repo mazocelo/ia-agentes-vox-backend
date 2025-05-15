@@ -3,11 +3,13 @@ var express = require('express');
 var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
-const authMiddleware = require('./middlewares/authMiddleware');
+const authMiddleware = require('./middlewares/auth');
+const authCustomServices = require('./middlewares/authCustomServices');
 
 var authRouter = require('./routes/auth');
 var agentsRouter = require('./routes/agents');
 var chatRouter = require('./routes/chat');
+var servicesRouter = require('./routes/services');
 
 var cors = require('cors');
 var app = express();
@@ -33,6 +35,7 @@ app.use('/auth', authRouter);
 app.use('/agents', authMiddleware, agentsRouter); 
 // app.use('/chat', authMiddleware, chatRouter);
 app.use('/chat', chatRouter);
+app.use('/services', authCustomServices, servicesRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {

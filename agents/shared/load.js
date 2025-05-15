@@ -1,6 +1,7 @@
 const agents = require("../../agents/shared/agents")
 const { createGroqAgent } = require("../../agents/groq");
 const { Agent } = require("../../Models");
+const { getQueues } = require("../../utils/VoxChatService");
 
 const Modelos = {
     'groq': createGroqAgent,
@@ -12,9 +13,16 @@ const loadAllAgents = async () => {
         return;
     }
     for (const agentData of agentsList) {
+        if (agentData.status !== "ativo") {
+            continue;
+        }
         try {
             const { dataValues } = agentData;
-            const clientAgent = await Modelos[dataValues.modelo](dataValues);
+            const filas = await getQueues(dataValues.tenant_id);
+            if (!filas) {
+                throw new Error('Erro ao buscar filas.');
+            }
+            const clientAgent = await Modelos[dataValues.modelo](dataValues, filas);
             if (!clientAgent) {
                 throw new Error('Erro ao criar o agente.');
             }

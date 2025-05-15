@@ -1,7 +1,7 @@
 var express = require('express');
 var router = express.Router();
 const jwt = require('jsonwebtoken');
-const authMiddleware = require('../middlewares/authMiddleware');
+const authMiddleware = require('../middlewares/auth');
 const JWT_SECRET = process.env.JWT_SECRET || 'sua_chave_secreta';
 const REFRESH_SECRET = process.env.REFRESH_SECRET || 'chave_refresh';
 const ACCESS_EXPIRES_IN = '15m';

@@ -1,116 +1,168 @@
 const { ChatGroq } = require('@langchain/groq');
-const { ConversationChain } = require('langchain/chains');
-const { BufferMemory } = require('langchain/memory');
+const { RunnableSequence } = require('@langchain/core/runnables');
 const {
     ChatPromptTemplate,
-    SystemMessagePromptTemplate,
-    PromptTemplate,
-    HumanMessagePromptTemplate,
+    MessagesPlaceholder,
 } = require('@langchain/core/prompts');
+
+const { BufferMemory } = require('langchain/memory');
 const { RedisChatMessageHistory } = require('@langchain/redis');
 
 const dotenv = require('dotenv');
 dotenv.config();
 
-// Define as filas disponíveis
-const filas = [
-    { queue: "Iluminação Pública", descricao: "Solicitações relacionadas à manutenção da iluminação pública." },
-    { queue: "Manutenção das Vias", descricao: "Chamados sobre buracos, pavimentação e conservação de ruas." },
-    { queue: "IPTU", descricao: "Dúvidas e atendimentos referentes ao imposto predial." },
-    { queue: "Certidões Negativas", descricao: "Emissão e consulta de certidões negativas municipais." },
-    { queue: "Parcelamento de Dívidas Vencidas", descricao: "Atendimentos para negociação e parcelamento de débitos." },
-    { queue: "Denúncias Maus Tratos a Animais", descricao: "Recebimento de denúncias sobre maus-tratos a animais." },
-    { queue: "Denúncia de Atividades Irregulares", descricao: "Denúncias sobre comércio ou construções irregulares." },
-    { queue: "Secretária de educação", descricao: "Informações e solicitações relacionadas à educação municipal." },
-    { queue: "Informações Turísticas", descricao: "Atendimento ao turista e divulgação de atrações locais." },
-    { queue: "Secretaria de Saúde", descricao: "Serviços e dúvidas relacionados à saúde pública." },
-    { queue: "Comunicações de Trânsito", descricao: "Informações e registros sobre ocorrências no trânsito." },
-    { queue: "Ouvidoria e outros assuntos", descricao: "Espaço para sugestões, reclamações e outros temas." },
-    { queue: "Tecnologia da Informação/ CPD", descricao: "Suporte técnico e problemas relacionados à TI." },
-    { queue: "Fora de Horário de Atendimento", descricao: "Atendimentos recebidos fora do expediente padrão." },
-    { queue: "Secretaria de Esportes", descricao: "Atendimentos sobre projetos e eventos esportivos." },
-    { queue: "Pagamentos", descricao: "Dúvidas e confirmações sobre pagamentos e tributos." },
-];
-
 // Cria o modelo da Groq
 const generateModel = (detalhes = {}) => {
     return new ChatGroq({
         apiKey: process.env.GROQ_API_KEY,
-        model: detalhes?.model || 'llama3-70b-8192',
-        temperature: detalhes?.temperature || 0.7,
+        model: detalhes?.model || 'llama-3.1-8b-instant',
+        temperature: detalhes?.temperature || 0.2,
         maxTokens: detalhes?.maxTokens || 1000,
         topP: detalhes?.topP || 1,
         frequencyPenalty: detalhes?.frequencyPenalty || 0,
         presencePenalty: detalhes?.presencePenalty || 0,
         stop: detalhes?.stop || null,
+        language: 'pt-br',
     });
 };
 
 // Cria o prompt para análise de triagem
-const createPrompt = (filas) => {
-    return PromptTemplate.fromTemplate(`
-            Você é um sistema de triagem de atendimento da Prefeitura.
+const createPrompt = (nome, filas, info, variaveis) => {
+    const filasDescricaoFormatada = filas.map(fila => {
+        const descricaoFila = fila.descricao || fila.info || 'Descrição não disponível';
+        let requerimentos = '';
 
-            Sua tarefa é analisar a mensagem do usuário e determinar se ela deve ser encaminhada para uma das filas de atendimento humano disponíveis.
+        if (descricaoFila.toLowerCase().includes('requer:')) {
+            // Extrai campos após "requer:"
+            requerimentos = descricaoFila.toLowerCase().split('requer:')[1].trim();
+            // Normaliza os campos (remove espaços extras, converte para minúsculas)
+            requerimentos = requerimentos
+                .split(',')
+                .map(campo => campo.trim().toLowerCase())
+                .join(',');
+        } else {
+            requerimentos = 'Nenhum dado adicional é necessário.';
+        }
 
-            IMPORTANTE:
-            - Quando identificar que o assunto da mensagem se encaixa em alguma das filas listadas abaixo, **retorne uma resposta JSON** no seguinte formato. Utilize EXATAMENTE a chave "mensagem" (em minúsculas) para a mensagem de retorno ao usuário:
+        return `- Fila ${fila.queue}, ID: ${fila.id}, Descrição: ${descricaoFila}. ${requerimentos ? `Campos solicitados: ${requerimentos}` : ''
+            }`;
+    }).join('\n');
 
-            \`\`\`json
-            {{
-                "encaminhar": true,
-                "fila": "NOME DA FILA PARA ONDE FOI ENCAMINHADO", // Exemplo de valor para a fila
-                "mensagem": "Aqui vai a mensagem informativa para o usuário sobre o encaminhamento." // Novo valor de exemplo, claramente um placeholder para o conteúdo
-            }}
-            \`\`\`
+    let secaoInstrucoesAdicionais = '';
+    if (info && typeof info === 'string' && info.trim() !== '') {
+        secaoInstrucoesAdicionais = `Instruções adicionais:\n${info.trim()}\n`;
+    }
 
-            - Caso o assunto **não exija encaminhamento**, retorne no seguinte formato, utilizando EXATAMENTE a chave "mensagem" (em minúsculas):
+    const variaveisFormatadas = variaveis?.length > 0
+        ? `- Campos permitidos para solicitação: ${variaveis.join(', ')}.`
+        : '- Nenhum campo adicional pode ou deve ser solicitado ao usuário.';
 
-            \`\`\`json
-            {{
-                "encaminhar": false,
-                "fila": null,
-                "mensagem": "Aqui vai a resposta ou a próxima pergunta para o usuário." // Novo valor de exemplo
-            }}
-            \`\`\`
+    const systemPrompt = `
+        Você é um assistente virtual de triagem da Prefeitura, seu nome é ${nome}.
+        responsável por identificar a intenção do usuário e encaminhar a solicitação para a fila mais apropriada e solicitar informações apenas quando necessário.
 
-            Filas disponíveis:
-            ${filas.map(fila => `- ${fila.queue}: ${fila.descricao}`).join('\n')}
+        ## Tarefa
+        IMPORTANTE:
+        - Retorne APENAS um objeto JSON com as seguintes chaves:
+            - "encaminhar": booleano
+            - "fila": string ou null
+            - "mensagem": string
+            - "queueId": número ou null
+            - "variaveis": objeto ou {{}}
+        - Se a fila NÃO exigir informações adicionais, envie a mensagem direta com confirmação da ação.
+        - NÃO inclua perguntas se "encaminhar" for verdadeiro.
+        - Não use quebras de linha (\n), barras invertidas (\), ou markdown.
+        - Retorne somente o JSON.
 
-            Responda apenas com o JSON, sem explicações ou comentários adicionais.
-            A mensagem ao usuário, contida na chave "mensagem", deve ser clara, útil e cordial.
-            Mensagem do usuário: {question}
-        `);
+        ## Diretrizes Gerais
+        1. **Encaminhamento direto:** Se a solicitação se encaixar claramente em uma das filas disponíveis, encaminhe-a diretamente, exceto se a fila solicitar informações adicionais.
+        2. **Pergunta clarificadora:** Se a intenção estiver relacionada aos serviços da prefeitura, mas você não tiver certeza da fila correta, peça mais detalhes de forma específica e útil, SOMENTE sobre os campos definidos abaixo.
+        3. **Resposta direta:** Se a mensagem for um cumprimento, agradecimento, pergunta geral ou não se enquadrar em nenhuma fila, responda de forma cordial e informativa.
+
+        ## Controle de Tickets de Atendimento
+        - Cada interação deve ser associada a um **ticket único de atendimento**
+        - Se o ticket recebido for **diferente do ticket atual**, reinicie o contexto da conversa
+        - Na **primeira interação de um novo ticket**, inclua o "ticket" na mensagem de resposta
+        - Mantenha o histórico de conversa apenas dentro do mesmo ticket
+
+        ## Diretrizes Específicas para Filas
+        - Use as informações abaixo para determinar quais filas exigem dados adicionais.
+        - Se a descrição incluir "requer:", siga a ordem dos campos listados.
+        - Nunca peça informações que não estão listadas nos "Campos solicitados".
+        - Encaminhe diretamente se nenhum campo for necessário.
+
+        ## Filas Disponíveis
+        Cada fila é um órgão individual. Analise as necessidades específicas de cada fila antes de seguir com a mensagem. Não invente perguntas. Siga fielmente a descrição da fila.
+        ${filasDescricaoFormatada}
+
+        ## Informações sobre dados possíveis de coletar. Não são obrigatórios.
+        ${variaveisFormatadas}
+
+        ## Instruções Adicionais
+        ${secaoInstrucoesAdicionais || ''}
+
+        ## Observações Importantes
+        - Não mande perguntas ao encaminhar para uma fila.
+        - Analise a intenção do usuário.
+        - Evite respostas robóticas ou repetitivas.
+        - Utilize linguagem natural, clara e empática.
+        - Retorne APENAS o objeto JSON, sem explicações adicionais.
+    `;
+
+    return ChatPromptTemplate.fromMessages([
+        ['system', systemPrompt],
+        new MessagesPlaceholder('chat_history'),
+        ['human', '{input}', 'human', '{ticket_de_atendimento}'],
+    ]);
 };
 
 // Cria a memória com histórico no Redis
 function createMemory(agentId) {
     return new BufferMemory({
-        returnMessages: true,
-        memoryKey: 'history',
         chatHistory: new RedisChatMessageHistory({
             sessionId: String(agentId),
             url: process.env.REDIS_URL,
         }),
+        memoryKey: 'chat_history',
+        returnMessages: true,
+        inputKey: 'input',
+        outputKey: 'output',
+        verbose: true,
     });
 }
 
+
 // Cria o agente Groq
-async function createGroqAgent(data) {
-    const { id, info = 'Assistente geral', detalhes } = data;
+async function createGroqAgent(dataAgente, filas, variaveis) {
+    const { id, info = 'Assistente geral', detalhes, nome } = dataAgente;
+    variaveis = ['nome', 'problema_relatado'];
     try {
         const memory = createMemory(id);
-        const prompt = createPrompt(filas);
+        const prompt = createPrompt(nome, filas, info, variaveis);
 
-        const agent = new ConversationChain({
-            llm: generateModel(detalhes),
+        const model = generateModel(detalhes);
+
+        // Crie uma chain usando LCEL
+        const chain = RunnableSequence.from([
+            {
+                input: (input) => input.input,
+                chat_history: async () => {
+                    const history = await memory.chatHistory.getMessages();
+                    return history;
+                },
+            },
             prompt,
-            memory,
-            // tools: [encaminhar],
-            verbose: true,
-        });
+            model,
+        ]);
 
-        return agent;
+        // Retorne um wrapper com invoke
+        return {
+            invoke: async ({ input }) => {
+                const response = await chain.invoke({ input });
+                await memory.chatHistory.addMessage(response);
+                return { response: response.content };
+            },
+        };
     } catch (error) {
         throw new Error(`Erro ao criar agente: ${error.message}`);
     }
