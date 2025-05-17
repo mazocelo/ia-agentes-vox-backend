@@ -1,38 +1,16 @@
 const agents = require("../../agents/shared/agents")
-const { createGroqAgent } = require("../../agents/groq");
-const { Agent } = require("../../Models");
-const { getQueues } = require("../../utils/VoxChatService");
+const { AuxiliarCreate } = require("./voxchatAuxiliar");
 
-const Modelos = {
-    'groq': createGroqAgent,
-}
 
 const loadAllAgents = async () => {
-    const agentsList = await Agent.findAll();
-    if (!agentsList) {
-        return;
+    const auxiliar = await AuxiliarCreate();
+    if (!auxiliar) {
+        throw new Error('Erro ao carregar os VoxChat Auxiliar.');
     }
-    for (const agentData of agentsList) {
-        if (agentData.status !== "ativo") {
-            continue;
-        }
-        try {
-            const { dataValues } = agentData;
-            const filas = await getQueues(dataValues.tenant_id);
-            if (!filas) {
-                throw new Error('Erro ao buscar filas.');
-            }
-            const clientAgent = await Modelos[dataValues.modelo](dataValues, filas);
-            if (!clientAgent) {
-                throw new Error('Erro ao criar o agente.');
-            }
-            const agent = Object.assign(clientAgent, dataValues);
-            agents.set(agent.id, agent);
-            console.log(`Agente ${agent.nome} carregado com sucesso.`);
-        } catch (error) {
-            console.error(`Erro ao carregar o agente `, error);
-        }
-    }
+    agents.set('VoxChat_Auxiliar', auxiliar);
+    console.log('VoxChat Auxiliar carregado com sucesso.');
+    
+
 }
 
 module.exports = { loadAllAgents };

@@ -3,8 +3,7 @@ module.exports = async function answer(question, ticket, agent) {
     try {
         // Invoca o agente com a pergunta e o ticket
         let response = await agent.invoke({
-            input: `Mensagem do usuário: ${question}`,
-            ticket_de_atendimento: ticket,
+            input: `Ticket de atendimento número: ${ticket} \nMensagem do usuário: ${question} `
         });
 
         // Parseia a resposta

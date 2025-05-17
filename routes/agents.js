@@ -83,37 +83,37 @@ router.delete("/delete/:id", async function (req, res, next) {
   }
 })
 
-router.post("/start/:id", async function (req, res, next) {
-  const clientId = req.user.org;
-  const { id } = req.params;
-  if (!clientId || !id) {
-    return res.status(400).json({ error: 'All fields are required' });
-  }
-  try {
-    let newAgent = await agenteController.startAgent(id)
-    res.status(201).json({ success: true, agent: newAgent });
-  }
-  catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-})
+// router.post("/start/:id", async function (req, res, next) {
+//   const clientId = req.user.org;
+//   const { id } = req.params;
+//   if (!clientId || !id) {
+//     return res.status(400).json({ error: 'All fields are required' });
+//   }
+//   try {
+//     let newAgent = await agenteController.startAgent(id)
+//     res.status(201).json({ success: true, agent: newAgent });
+//   }
+//   catch (error) {
+//     console.error(error);
+//     res.status(500).json({ error: 'Internal server error' });
+//   }
+// })
 
-router.post("/stop/:id", async function (req, res, next) {
-  const clientId = req.user.org;
-  const { id } = req.params;
-  if (!clientId || !id) {
-    return res.status(400).json({ error: 'All fields are required' });
-  }
-  try {
-    let newAgent = await agenteController.stopAgent(id)
-    res.status(201).json({ success: true, agent: newAgent });
-  }
-  catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-})
+// router.post("/stop/:id", async function (req, res, next) {
+//   const clientId = req.user.org;
+//   const { id } = req.params;
+//   if (!clientId || !id) {
+//     return res.status(400).json({ error: 'All fields are required' });
+//   }
+//   try {
+//     let newAgent = await agenteController.stopAgent(id)
+//     res.status(201).json({ success: true, agent: newAgent });
+//   }
+//   catch (error) {
+//     console.error(error);
+//     res.status(500).json({ error: 'Internal server error' });
+//   }
+// })
 
 
 module.exports = router;

@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
+var { loadAllAgents } = require('../agents/shared/load');
 /**
  * Module dependencies.
  */
-
+require('dotenv').config();
 var app = require('../app');
 var debug = require('debug')('backend:server');
 var http = require('http');
-var { loadAllAgents } = require('../agents/shared/load');
+
+
 
 /**
  * Get port from environment and store in Express.

@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-let baseURL = 'https://f978-179-108-169-35.ngrok-free.app/';
+let baseURL = 'https://cfe1-179-108-169-35.ngrok-free.app/';
 
 // let baseURL = "https://chat-api.voxcity.com.br"
 

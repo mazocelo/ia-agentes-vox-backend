@@ -1,126 +1,152 @@
 const { ChatGroq } = require('@langchain/groq');
 const { RunnableSequence } = require('@langchain/core/runnables');
-const {
-    ChatPromptTemplate,
-    MessagesPlaceholder,
-} = require('@langchain/core/prompts');
-
+const { ChatPromptTemplate, MessagesPlaceholder } = require('@langchain/core/prompts');
 const { BufferMemory } = require('langchain/memory');
 const { RedisChatMessageHistory } = require('@langchain/redis');
-
 const dotenv = require('dotenv');
+const agents = require('../shared/agents');
+
 dotenv.config();
 
-// Cria o modelo da Groq
-const generateModel = (detalhes = {}) => {
-    return new ChatGroq({
-        apiKey: process.env.GROQ_API_KEY,
-        model: detalhes?.model || 'llama-3.1-8b-instant',
-        temperature: detalhes?.temperature || 0.2,
-        maxTokens: detalhes?.maxTokens || 1000,
-        topP: detalhes?.topP || 1,
-        frequencyPenalty: detalhes?.frequencyPenalty || 0,
-        presencePenalty: detalhes?.presencePenalty || 0,
-        stop: detalhes?.stop || null,
-        language: 'pt-br',
-    });
+// Constantes globais
+const DEFAULT_MODEL_SETTINGS = {
+    model: 'gemma2-9b-it',
+    temperature: 0.2,
+    maxTokens: 250,
+    topP: 1,
+    frequencyPenalty: 0,
+    presencePenalty: 0,
+    stop: null,
+    language: 'pt-br',
 };
 
-// Cria o prompt para análise de triagem
-const createPrompt = (nome, filas, info, variaveis) => {
-    const filasDescricaoFormatada = filas.map(fila => {
-        const descricaoFila = fila.descricao || fila.info || 'Descrição não disponível';
-        let requerimentos = '';
+function generateModel(detalhes = {}) {
+    return new ChatGroq({
+        apiKey: process.env.GROQ_API_KEY,
+        ...DEFAULT_MODEL_SETTINGS,
+        ...detalhes,
+    });
+}
 
-        if (descricaoFila.toLowerCase().includes('requer:')) {
-            // Extrai campos após "requer:"
-            requerimentos = descricaoFila.toLowerCase().split('requer:')[1].trim();
-            // Normaliza os campos (remove espaços extras, converte para minúsculas)
-            requerimentos = requerimentos
-                .split(',')
-                .map(campo => campo.trim().toLowerCase())
-                .join(',');
-        } else {
-            requerimentos = 'Nenhum dado adicional é necessário.';
-        }
 
-        return `- Fila ${fila.queue}, ID: ${fila.id}, Descrição: ${descricaoFila}. ${requerimentos ? `Campos solicitados: ${requerimentos}` : ''
-            }`;
-    }).join('\n');
-
-    let secaoInstrucoesAdicionais = '';
-    if (info && typeof info === 'string' && info.trim() !== '') {
-        secaoInstrucoesAdicionais = `Instruções adicionais:\n${info.trim()}\n`;
+async function formatFilas(filas) {
+    if (!Array.isArray(filas)) {
+        throw new Error('Entrada inválida: "filas" deve ser um array.');
     }
 
+    const auxiliar = agents.get('VoxChat_Auxiliar');
+    if (!auxiliar) {
+        return filas.map(fila => `- ${fila.nome || 'Sem Nome'} (${fila.id || 'Sem ID'}): ${fila.descricao || 'Sem Descrição'}`).join('\n');
+    }
+
+    try {
+        // Monta a entrada com base nas filas
+        const input = `
+            ${filas.map(fila => `- nome: ${fila.queue || 'Sem Nome'}, descricao:${fila.info || 'Sem Descrição'}, id:${fila.id || 'Sem ID'}`).join('\n')}`.trim();
+
+        console.log('Entrada para o agente auxiliar:', input);
+        const response = await auxiliar.invoke({ input });
+        console.log('Resposta do agente auxiliar:', response);
+
+        if (!response?.response) {
+            throw new Error('Resposta vazia ou inválida do agente.');
+        }
+
+        let jsonResponse = response.response.trim();
+
+        // Tenta parsear diretamente como JSON primeiro
+        try {
+            const parsed = JSON.parse(jsonResponse);
+            return parsed;
+        } catch (directParseError) {
+            // Se falhar, tenta extrair via markdown
+            const jsonMatch = jsonResponse.match(/```json\\s*([\\s\\S]*?)\\s*```/i);
+            if (!jsonMatch) {
+                throw new Error('Resposta inválida. Bloco JSON não encontrado.');
+            }
+            const jsonString = jsonMatch[1].trim();
+            return JSON.parse(jsonString);
+        }
+
+    } catch (error) {
+        console.error('Erro ao processar filas:', error);
+        return 'Erro ao processar as filas.';
+    }
+}
+
+async function createPrompt(nome, filas, info, variaveis) {
+    const filasDescricaoFormatada = await formatFilas(filas).catch((error) => {
+        console.error('Erro ao formatar filas:', error.message);
+        return filas.map(fila => `- ${fila.nome} (${fila.id}): ${fila.descricao}`).join('\n');
+    });
+
+    console.log('Filas formatadas:', filasDescricaoFormatada);
+
+    const secaoInstrucoesAdicionais = info?.trim() ? `Instruções adicionais:\n${info.trim()}\n` : '';
     const variaveisFormatadas = variaveis?.length > 0
         ? `- Campos permitidos para solicitação: ${variaveis.join(', ')}.`
         : '- Nenhum campo adicional pode ou deve ser solicitado ao usuário.';
 
+    // Dentro da função createPrompt
+    const filasString = JSON.stringify(filasDescricaoFormatada, null, 2)
+        .replace(/{/g, '{{')
+        .replace(/}/g, '}}');
+
+    // const variaveisFormatadas = ...;
+
     const systemPrompt = `
         Você é um assistente virtual de triagem da Prefeitura, seu nome é ${nome}.
-        responsável por identificar a intenção do usuário e encaminhar a solicitação para a fila mais apropriada e solicitar informações apenas quando necessário.
+        Responsável por identificar a intenção do usuário e encaminhar a solicitação para a fila mais apropriada.
 
         ## Tarefa
-        IMPORTANTE:
-        - Retorne APENAS um objeto JSON com as seguintes chaves:
-            - "encaminhar": booleano
-            - "fila": string ou null
-            - "mensagem": string
-            - "queueId": número ou null
-            - "variaveis": objeto ou {{}}
-        - Se a fila NÃO exigir informações adicionais, envie a mensagem direta com confirmação da ação.
-        - NÃO inclua perguntas se "encaminhar" for verdadeiro.
-        - Não use quebras de linha (\n), barras invertidas (\), ou markdown.
-        - Retorne somente o JSON.
+        Retorne APENAS um objeto JSON com as seguintes chaves:
+        - "encaminhar": booleano (true se todos os campos necessários forem fornecidos)
+        - "fila": nome da fila escolhida (string)
+        - "mensagem": mensagem ao usuário (string)
+        - "queueId": ID da fila escolhida (string)
+        - "variaveis": objeto com campos coletados ou a serem solicitados
 
-        ## Diretrizes Gerais
-        1. **Encaminhamento direto:** Se a solicitação se encaixar claramente em uma das filas disponíveis, encaminhe-a diretamente, exceto se a fila solicitar informações adicionais.
-        2. **Pergunta clarificadora:** Se a intenção estiver relacionada aos serviços da prefeitura, mas você não tiver certeza da fila correta, peça mais detalhes de forma específica e útil, SOMENTE sobre os campos definidos abaixo.
-        3. **Resposta direta:** Se a mensagem for um cumprimento, agradecimento, pergunta geral ou não se enquadrar em nenhuma fila, responda de forma cordial e informativa.
-
-        ## Controle de Tickets de Atendimento
-        - Cada interação deve ser associada a um **ticket único de atendimento**
-        - Se o ticket recebido for **diferente do ticket atual**, reinicie o contexto da conversa
-        - Na **primeira interação de um novo ticket**, inclua o "ticket" na mensagem de resposta
-        - Mantenha o histórico de conversa apenas dentro do mesmo ticket
-
-        ## Diretrizes Específicas para Filas
-        - Use as informações abaixo para determinar quais filas exigem dados adicionais.
-        - Se a descrição incluir "requer:", siga a ordem dos campos listados.
-        - Nunca peça informações que não estão listadas nos "Campos solicitados".
-        - Encaminhe diretamente se nenhum campo for necessário.
+        ## Regras Importantes
+        1. NÃO invente filas — use apenas as disponíveis na lista abaixo.
+        2. Se a intenção do usuário for clara, selecione a fila mais adequada.
+        3. Consulte os campos em "requerimentos" da fila escolhida.
+        4. Peça os campos faltantes UM POR VEZ, com perguntas claras e objetivas.
+        5. Ao finalizar a coleta de todos os campos, envie uma mensagem de confirmação e defina "encaminhar": true.
+        6. Não inclua perguntas se "encaminhar" for verdadeiro.
 
         ## Filas Disponíveis
-        Cada fila é um órgão individual. Analise as necessidades específicas de cada fila antes de seguir com a mensagem. Não invente perguntas. Siga fielmente a descrição da fila.
-        ${filasDescricaoFormatada}
+        ${filasString}
 
-        ## Informações sobre dados possíveis de coletar. Não são obrigatórios.
+        ## Campos Permitidos para Coleta
+        Os campos a seguir são obrigatórios para cada fila:
         ${variaveisFormatadas}
 
         ## Instruções Adicionais
-        ${secaoInstrucoesAdicionais || ''}
+        ${secaoInstrucoesAdicionais}
 
         ## Observações Importantes
-        - Não mande perguntas ao encaminhar para uma fila.
-        - Analise a intenção do usuário.
-        - Evite respostas robóticas ou repetitivas.
-        - Utilize linguagem natural, clara e empática.
-        - Retorne APENAS o objeto JSON, sem explicações adicionais.
-    `;
+        - Nunca invente filas ou campos extras.
+        - Use linguagem natural, empática e objetiva.
+        - Mantenha controle do histórico para evitar repetição de perguntas.
+    `.trim();
 
     return ChatPromptTemplate.fromMessages([
         ['system', systemPrompt],
         new MessagesPlaceholder('chat_history'),
-        ['human', '{input}', 'human', '{ticket_de_atendimento}'],
+        ['human', '{input}'],
     ]);
-};
+}
 
-// Cria a memória com histórico no Redis
-function createMemory(agentId) {
+function createMemory(ticket, agenteId) {
+    if (!process.env.REDIS_URL) {
+        throw new Error('URL do Redis não configurada.');
+    }
+
+    const sessionId = `${String(ticket)}_${String(agenteId)}`;
+
     return new BufferMemory({
         chatHistory: new RedisChatMessageHistory({
-            sessionId: String(agentId),
+            sessionId,
             url: process.env.REDIS_URL,
         }),
         memoryKey: 'chat_history',
@@ -131,18 +157,14 @@ function createMemory(agentId) {
     });
 }
 
-
-// Cria o agente Groq
-async function createGroqAgent(dataAgente, filas, variaveis) {
+async function createGroqAgent(dataAgente, filas, variaveis, ticket) {
     const { id, info = 'Assistente geral', detalhes, nome } = dataAgente;
-    variaveis = ['nome', 'problema_relatado'];
-    try {
-        const memory = createMemory(id);
-        const prompt = createPrompt(nome, filas, info, variaveis);
 
+    try {
+        const memory = createMemory(ticket, id);
+        const prompt = await createPrompt(nome, filas, info, variaveis);
         const model = generateModel(detalhes);
 
-        // Crie uma chain usando LCEL
         const chain = RunnableSequence.from([
             {
                 input: (input) => input.input,
@@ -155,7 +177,6 @@ async function createGroqAgent(dataAgente, filas, variaveis) {
             model,
         ]);
 
-        // Retorne um wrapper com invoke
         return {
             invoke: async ({ input }) => {
                 const response = await chain.invoke({ input });
@@ -168,4 +189,23 @@ async function createGroqAgent(dataAgente, filas, variaveis) {
     }
 }
 
-module.exports = { createGroqAgent };
+async function clearSessionMemory(ticket, agenteId) {
+    try {
+        const sessionId = `${String(ticket)}_${String(agenteId)}`;
+        const redisChatHistory = new RedisChatMessageHistory({
+            sessionId,
+            url: process.env.REDIS_URL,
+        });
+
+        await redisChatHistory.clear();
+
+        console.log(`Memória da sessão ${sessionId} foi limpa com sucesso.`);
+    } catch (error) {
+        throw new Error(`Erro ao limpar a memória da sessão: ${error.message}`);
+    }
+}
+
+module.exports = {
+    createGroqAgent,
+    clearSessionMemory,
+};
